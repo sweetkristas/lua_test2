@@ -43,8 +43,12 @@ namespace graphics
 		void bind();
 		TexturePtr clone();
 		unsigned id() const { return *id_; }
+		int width() const { return src_width_; }
+		int height() const { return src_height_; }
 	private:
 		std::shared_ptr<unsigned> id_;
 		std::string filename_;
+		int src_width_;
+		int src_height_;
 	};
 }

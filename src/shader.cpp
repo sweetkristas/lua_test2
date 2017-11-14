@@ -32,23 +32,31 @@ namespace
 		"#version 330 core\n"
 		"layout (location = 0) in vec2 position;\n"
 		"layout (location = 1) in vec2 texcoord;\n"
+		"layout (location = 2) in vec2 normal;\n"
+		"layout (location = 3) in vec4 color;\n"
 		"uniform mat4 u_projmatrix;\n"
 		"out vec2 v_texcoord;\n"
+		"out vec2 v_normal;\n"
+		"out vec4 v_color;\n"
 		"void main()\n"
 		"{\n"
 		"    gl_Position = u_projmatrix * vec4(position,0.0,1.0);\n"
 		"    v_texcoord = texcoord;\n"
+		"    v_normal = normal;\n"
+		"    v_color = color;\n"
 		"}\n";
 	const std::string basic_frag_shader =
 		"#version 330 core\n"
 		"in vec2 v_texcoord;\n"
-		"uniform vec4 u_color;\n"
+		"in vec2 v_normal;\n"
+		"in vec4 v_color;\n"
+		//"uniform vec4 u_color;\n"
 		"uniform sampler2D u_tex;\n"
 		"out vec4 out_color;\n"
 		"void main()\n"
 		"{\n"
 		"    vec4 tc = texture(u_tex, v_texcoord);\n"
-		"    out_color = u_color * tc;\n"
+		"    out_color = tc;\n" // v_color * u_color * 
 		"}\n";
 
 }
@@ -159,7 +167,7 @@ namespace graphics
 		return true;
 	}
 
-	GLint Shader::getUniformId(const std::string& id)
+	GLint Shader::getUniformId(const std::string& id) const
 	{
 		auto location = glGetUniformLocation(object_, id.c_str());
 		ASSERT_LOG(location != -1, "Failed to get uniform '{}' for program '{}'", id, name());

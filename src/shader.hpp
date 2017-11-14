@@ -26,6 +26,8 @@
 
 #include "GL/gl3w.h"
 
+#include "asserts.hpp"
+
 
 namespace graphics
 {
@@ -49,7 +51,7 @@ namespace graphics
 			ASSERT_LOG(object_ != 0, "Generation of shader program has not been completed.");
 			glUseProgram(object_); 
 		}
-		GLint getUniformId(const std::string& id);
+		GLint getUniformId(const std::string& id) const;
 	private:
 		std::string name_;
 		GLuint object_;

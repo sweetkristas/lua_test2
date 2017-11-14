@@ -59,7 +59,7 @@
     <ProjectGuid>{A33DCBF7-5C23-44ED-A217-1371DE88766D}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>lua_test2</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.15063.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

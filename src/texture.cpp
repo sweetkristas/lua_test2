@@ -44,8 +44,10 @@ namespace graphics
 	}
 
 	Texture::Texture()
-		: id_(nullptr),
-		  filename_()
+		: id_(nullptr)
+		, filename_()
+		, src_width_(0)
+		, src_height_(0)
 	{
 	}
 
@@ -62,13 +64,14 @@ namespace graphics
 		// if we're re-using this instance then clear the old texture.
 		clear();
 
+		/* There is no width/height associated with id in the texture cache, so this will fail badly.
 		auto it = get_texture_cache().find(filename);
 		if(it != get_texture_cache().end()) {
 			id_ = it->second.lock();
 			if(id_ != nullptr) {
 				return;
 			}
-		}
+		}*/
 
 		int x, y, n;
 		unsigned char *data = stbi_load(filename.c_str(), &x, &y, &n, 0);
@@ -115,7 +118,9 @@ namespace graphics
 		stbi_image_free(data);
 		id_ = std::shared_ptr<unsigned>(new unsigned(new_id), [](unsigned* p) { glDeleteTextures(1, p); free(p); });
 
-		get_texture_cache()[filename_] = id_;
+		//get_texture_cache()[filename_] = id_;
+		src_width_ = x;
+		src_height_ = y;
 	}
 
 	void Texture::clear()

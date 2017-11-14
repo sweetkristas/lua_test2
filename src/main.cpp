@@ -832,6 +832,26 @@ public:
 		glGenVertexArrays(1, &vao_);
 		glGenBuffers(1, &vbo_);
 		glGenBuffers(1, &ibo_);
+
+		glBindVertexArray(vao_);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
+
+		const intptr_t stride = sizeof(DrawVertex);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const GLvoid*>(offsetof(DrawVertex, position_)));
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const GLvoid*>(offsetof(DrawVertex, uv_)));
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const GLvoid*>(offsetof(DrawVertex, normal_)));
+		glEnableVertexAttribArray(3);
+		glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, reinterpret_cast<const GLvoid*>(offsetof(DrawVertex, color_)));
+
+		// need to unbind the vertex array object before the buffers, because the VAO 
+		// *will* remember the last item bound.
+		glBindVertexArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	}
 	~DrawList() {
 		glDeleteVertexArrays(1, &vao_);
@@ -845,7 +865,7 @@ public:
 	//const std::vector<DrawVertex>& getVertices() const { return vertices_; }
 	//const std::vector<DrawIndex>& getIndices() const { return indices_; }
 	// number 1 of the addSprite overloads -- most basic case
-	void addSprite(unsigned texid, const point& loc, int width, int height, const rect& tr, uint32_t color = 0xffffffff);
+	void addSprite(const graphics::Texture* tex, const point& loc, int width, int height, const rect& tr, uint32_t color = 0xffffffff);
 
 	void clear() { draw_cmds_.clear(); }
 
@@ -868,23 +888,28 @@ private:
 
 namespace
 {
-	static const unsigned short indicies_rect[] = {
+	static const std::vector<unsigned short> indicies_rect{
 		0, 1, 2,
 		2, 3, 0
 	};
 }
-void DrawList::addSprite(unsigned texid, const point& loc, int width, int height, const rect& tr, uint32_t color)
+void DrawList::addSprite(const graphics::Texture* tex, const point& loc, int width, int height, const rect& tr, uint32_t color)
 {
-	auto& cmd = draw_cmds_[texid];
-	cmd.vertices.emplace_back(glm::vec2(loc.x, loc.y), glm::vec2(tr.x1(), tr.y2()), glm::vec2(), color);
-	cmd.vertices.emplace_back(glm::vec2(loc.x+width, loc.y), glm::vec2(tr.x2(), tr.y2()), glm::vec2(), color);
-	cmd.vertices.emplace_back(glm::vec2(loc.x+width, loc.y+height), glm::vec2(tr.x2(), tr.y1()), glm::vec2(), color);
-	cmd.vertices.emplace_back(glm::vec2(loc.x, loc.y+height), glm::vec2(tr.x1(), tr.y1()), glm::vec2(), color);
+	const float trf[4]{ static_cast<float>(tr.x1()) / static_cast<float>(tex->width()), 
+		static_cast<float>(tr.y1()) / static_cast<float>(tex->width()), 
+		static_cast<float>(tr.x2()) / static_cast<float>(tex->height()), 
+		static_cast<float>(tr.y2()) / static_cast<float>(tex->height()) };
 
-	std::copy(indicies_rect, indicies_rect + sizeof(indicies_rect), std::back_inserter(cmd.indices));
+	auto& cmd = draw_cmds_[tex->id()];
+	cmd.vertices.emplace_back(glm::vec2(loc.x, loc.y), glm::vec2(trf[0], trf[1]), glm::vec2(), color);
+	cmd.vertices.emplace_back(glm::vec2(loc.x+width, loc.y), glm::vec2(trf[2], trf[1]), glm::vec2(), color);
+	cmd.vertices.emplace_back(glm::vec2(loc.x+width, loc.y+height), glm::vec2(trf[2], trf[3]), glm::vec2(), color);
+	cmd.vertices.emplace_back(glm::vec2(loc.x, loc.y+height), glm::vec2(trf[0], trf[3]), glm::vec2(), color);
+
+	std::copy(indicies_rect.cbegin(), indicies_rect.cend(), std::back_inserter(cmd.indices));
 	cmd.command.addElements(6);
 	if(cmd.command.getTextureId() == 0) {
-		cmd.command.setTextureId(texid);
+		cmd.command.setTextureId(tex->id());
 	}
 }
 
@@ -892,7 +917,7 @@ void game::Object::draw(DrawList* drawlist)
 {
 	ASSERT_LOG(!tex_rect_.empty(), "No rects defined for texture.");
 	const rect& tr = tex_rect_[frame_];
-	drawlist->addSprite(tex_->id(), loc_, width_, height_, tr);
+	drawlist->addSprite(tex_.get(), loc_, width_, height_, tr);
 }
 
 #include "glm/gtc/matrix_transform.hpp"
@@ -901,28 +926,36 @@ void game::Object::draw(DrawList* drawlist)
 GLuint g_proj_matrix_loc = -1;
 int g_width = 0, g_height = 0;
 
-void render(const DrawList* drawlist)
+void render(const game::Object* obj, const DrawList* drawlist)
 {
+	obj->getShader()->apply();
 
     glViewport(0, 0, (GLsizei)g_width, (GLsizei)g_height);
-	auto ortho_projection = glm::ortho(0.f, static_cast<float>(g_width), 0.f, static_cast<float>(g_height));
-    const float ortho_projection[4][4] =
+	auto ortho_projection = glm::ortho(0.f, static_cast<float>(g_width), static_cast<float>(g_height), 0.f);
+    /*const float ortho_projection[4][4] =
     {
         { 2.0f/g_width, 0.0f,                   0.0f, 0.0f },
         { 0.0f,                  2.0f/-g_height, 0.0f, 0.0f },
         { 0.0f,                  0.0f,                  -1.0f, 0.0f },
         {-1.0f,                  1.0f,                   0.0f, 1.0f },
-    };
+    };*/
     glUniformMatrix4fv(g_proj_matrix_loc, 1, GL_FALSE, glm::value_ptr(ortho_projection));
+
+	//static GLuint color_id = obj->getShader()->getUniformId("u_color");
+	//glUniform4f(color_id, 1.0f, 1.0f, 1.0f, 1.0f);
+	static GLuint tex_id = obj->getShader()->getUniformId("u_tex");
+	glUniform1i(tex_id, 0);
+
+	glActiveTexture(GL_TEXTURE0);
 
 	for(const auto& item : *drawlist) {
 		const auto& cmd = item.second;
 		glBindVertexArray(drawlist->getVertexArrayObj());
 		glBindBuffer(GL_ARRAY_BUFFER, drawlist->getVertexBufferObj());
-		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd.vertices.size() * sizeof(DrawVertex), cmd.vertices.data());
+		glBufferData(GL_ARRAY_BUFFER, cmd.vertices.size() * sizeof(DrawVertex), cmd.vertices.data(), GL_STREAM_DRAW);
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawlist->getIndexBufferObj());
-		glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, cmd.indices.size() * sizeof(DrawIndex), cmd.indices.data());
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, cmd.indices.size() * sizeof(DrawIndex), cmd.indices.data(), GL_STREAM_DRAW);
 
 		//if(cmd->user_callback_) {
 		//	cmd->user_callback_(&this, cmd);
@@ -934,6 +967,10 @@ void render(const DrawList* drawlist)
 		}
 		glDrawElements(GL_TRIANGLES, cmd.command.getElementCount(), sizeof(DrawIndex) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, 0);
 	}
+
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 
@@ -954,6 +991,8 @@ int main(int argc, char* argv[])
 	auto wnd = SDL2::CreateWin("lua_test2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1600, 900);
 	LOG_INFO("Requested Window Size: {}x{}", wnd->getRequestedWidth(), wnd->getRequestedHeight());
 	LOG_INFO("Actual Window Size: {}x{}", wnd->getWidth(), wnd->getHeight());
+	g_width = wnd->getWidth();
+	g_height = wnd->getHeight();
 
     double t = 0.0;
     double dt = 0.05;
@@ -964,18 +1003,22 @@ int main(int argc, char* argv[])
 	auto bshader = graphics::Shader::getShader("basic");
 	bshader->apply();
 
-	glUniform4f(bshader->getUniformId("u_color"), 1.0f, 1.0f, 1.0f, 1.0f);
-	glUniform1i(bshader->getUniformId("u_tex"), 0);
 	g_proj_matrix_loc = bshader->getUniformId("u_projmatrix");
 
-	test1();
+	//test1();
 
 	std::unique_ptr<graphics::Texture> tex = std::make_unique<graphics::Texture>("..\\images\\test1.png");
 	tex->bind();
 
 	wnd->setClearColor(0, 0, 0, 255);
-	
+
+	glEnable(GL_BLEND);
+	glBlendEquation(GL_FUNC_ADD);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_CULL_FACE);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_SCISSOR_TEST);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 	theme_imgui_default(true, 1.0f);
 
@@ -991,16 +1034,19 @@ int main(int argc, char* argv[])
 	// player->attachShader(bshader->clone());
 	DrawList drawlist;
 
+	int px = g_width / 2 - player->width() / 2;
+	int py = g_height / 2 - player->height() / 2;
+
 	SDL_Event ev;
 	bool running = true;
 	while(running) {
 		while(SDL_PollEvent(&ev)) {
 			ImGui_ImplSdlGL3_ProcessEvent(&ev);
 
+			const auto mod = SDL_GetModState();
 			//fmt::print("0x{:x}\n", ev.type);
 			if(ev.type == SDL_KEYUP) {
 				const auto key = ev.key.keysym.sym;
-				const auto mod = SDL_GetModState();
 				if(ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
 					fmt::print("ESC pressed.\n");
 					running = false;
@@ -1015,9 +1061,22 @@ int main(int argc, char* argv[])
 					g_show_fps = !g_show_fps;
 				} else if(key == SDLK_F2) {
 					g_show_text_editor = !g_show_text_editor;
-				} else if(key == SDLK_BACKQUOTE) {
+				} else if (key == SDLK_BACKQUOTE) {
 					g_show_main_menu_bar = !g_show_main_menu_bar;
 				}
+			} else if (ev.type == SDL_KEYDOWN) {
+				const auto key = ev.key.keysym.sym;
+
+				if (key == SDLK_UP) {
+					py -= 10;
+				} else if (key == SDLK_DOWN) {
+					py += 10;
+				} else if (key == SDLK_LEFT) {
+					px -= 10;
+				} else if (key == SDLK_RIGHT) {
+					px += 10;
+				}
+
 			} else if(ev.type == SDL_WINDOWEVENT) {
 				running = wnd->handleWindowEvent(&ev);
 			}
@@ -1047,9 +1106,9 @@ int main(int argc, char* argv[])
 
 		wnd->newFrame();
 
-		player->setLocation(800, 450);
+		player->setLocation(px, py);
 		player->draw(&drawlist);
-		render(&drawlist);
+		render(player.get(), &drawlist);
 		drawlist.clear();
 		
 		if(g_show_main_menu_bar && ImGui::BeginMainMenuBar()) {

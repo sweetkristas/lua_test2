@@ -44,6 +44,8 @@ namespace game
 		void setLocation(int x, int y) { loc_.x = x; loc_.y = y; }
 		void attachShader(graphics::Shader* s);
 		const graphics::Shader* getShader() const { return shader_; }
+		int width() const { return width_; }
+		int height() const { return height_; }
 	private:
 		std::unique_ptr<graphics::Texture> tex_;
 		point loc_;
